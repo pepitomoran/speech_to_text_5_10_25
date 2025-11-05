@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import sounddevice as sd
 import numpy as np
 import socket
@@ -11,7 +13,7 @@ PORTS = {
     "final": 7202,    # Finalized transcription results
 }
 
-MODEL_PATH = "models/vosk-model-small-es-0.42"  # Path to downloaded model
+MODEL_PATH = "/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/models/vosk-model-small-es-0.42"  # Path to downloaded model
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 8000  # About 0.5 sec blocks
 # ------------------------------------------

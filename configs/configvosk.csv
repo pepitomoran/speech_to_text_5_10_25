@@ -1,0 +1,7 @@
+key,value
+text_pipe_path,/tmp/stt_text.pipe
+audio_pipe_path,/tmp/stt_audio.pipe
+model_path,models/vosk-model-small-en-us-0.15
+sample_rate,16000
+mock,true
+language,en

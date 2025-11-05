@@ -39,3 +39,5 @@ ENV/
 
 # Other
 Thumbs.db
+td/
+models/

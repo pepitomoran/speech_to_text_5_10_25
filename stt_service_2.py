@@ -16,7 +16,8 @@ PORTS = {
 
 MODEL_PATH = "/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/models/vosk-model-small-es-0.42"  # Path to downloaded model
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 8000  # About 0.5 sec blocks
+BLOCK_SIZE = 4000  # About 0.5 sec blocks
+MAX_WORDS_PER_CHUNK = 16  # Maximum number of words per partial transcription chunk
 # ------------------------------------------
 
 # Shared UDP socket
@@ -65,15 +66,21 @@ def callback(indata, frames, time, status):
         partial = json.loads(recognizer.PartialResult())
         ptext = partial.get("partial", "")
         if ptext:
-            send_udp(ptext, PORTS["partial"])  # Send partial transcription
-            # Send each word from the partial transcription
-            words = ptext.split()  # Split partial transcription into words
-            for word in words:
-                word_conf = {
-                    "word": word,
-                    "confidence": None,  # Confidence is not available for partial results
-                }
-                send_udp(json.dumps(word_conf), PORTS["word_conf"])  # Send word
+            # Split the partial transcription into smaller chunks
+            words = ptext.split()  # Split the transcription into individual words
+
+            # Send each chunk of words as a separate partial update
+            for i in range(0, len(words), MAX_WORDS_PER_CHUNK):
+                chunk = " ".join(words[i:i + MAX_WORDS_PER_CHUNK])  # Create a chunk of MAX_WORDS_PER_CHUNK words
+                send_udp(chunk, PORTS["partial"])  # Send the chunk as a partial transcription
+
+                # Send each word in the chunk with confidence as None
+                for word in chunk.split():
+                    word_conf = {
+                        "word": word,
+                        "confidence": None,  # Confidence is not available for partial results
+                    }
+                    send_udp(json.dumps(word_conf), PORTS["word_conf"])  # Send word
 
 # ------------------------------------------------
 

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Set the PATH and other environment variables
-export PATH="/usr/local/bin:$PATH"
-export PYTHONPATH="/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/stt_venv/lib/python3.12/site-packages:$PYTHONPATH"
+
+# Dynamically determine the root directory of the project
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Activate the virtual environment
-source /Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/stt_venv/bin/activate
+source "$BASE_DIR/stt_venv/bin/activate"
 
-# Run the STT service script and log output
-python /Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/stt_service_2.py > /Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/service.log 2>&1
+# Run the Python script with the dynamically resolved BASE_DIR
+python3 "$BASE_DIR/stt_service_2.py" --base_dir "$BASE_DIR"

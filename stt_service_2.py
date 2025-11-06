@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
 
+import os
 import csv
+import argparse
 import sounddevice as sd
 import numpy as np
 import socket
 import json
 from vosk import Model, KaldiRecognizer
 
-# ---------------- SETTINGS ----------------
-CONFIG_FILE = "/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/config.csv"  # Path to the CSV file
+# Parse command-line arguments
+parser = argparse.ArgumentParser()
+parser.add_argument("--base_dir", required=True, help="Base directory of the project")
+args = parser.parse_args()
+
+# Use the base directory passed from the service.sh script
+BASE_DIR = args.base_dir
 
 # Function to read configuration from the CSV file
 def read_config_from_csv():
     config = {}
     try:
-        with open(CONFIG_FILE, mode='r') as file:
+        config_file = os.path.join(BASE_DIR, "config.csv")  # Relative path to the config.csv file
+        with open(config_file, mode='r') as file:
             reader = csv.reader(file)
             next(reader)  # Skip the header row
             for row in reader:
                 key, value = row
-                if value.isdigit():
-                    config[key] = int(value)  # Convert numeric values to integers
-                else:
-                    config[key] = value  # Keep string values as-is
+                config[key] = int(value) if value.isdigit() else value  # Convert numeric values to integers
     except Exception as e:
         print(f"[CONFIG ERROR] Failed to read from CSV: {e}")
     return config
@@ -30,17 +35,17 @@ def read_config_from_csv():
 # Load configuration
 config = read_config_from_csv()
 SAMPLE_RATE = config.get("SAMPLE_RATE", 16000)
-MODEL_PATH = config.get("MODEL_PATH", "/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/models/vosk-model-small-es-0.42'")
+MODEL_PATH = os.path.join(BASE_DIR, config.get("MODEL_PATH", "models/vosk-model-small-en-us-0.15"))
 BLOCK_SIZE = config.get("BLOCK_SIZE", 4000)
 MAX_WORDS_PER_CHUNK = config.get("MAX_WORDS", 16)
 
+# UDP Settings
 UDP_IP = "127.0.0.1"
 PORTS = {
     "partial": 7201,       # Partial transcription updates
     "final": 7202,         # Finalized transcription results
     "word_conf": 7203,     # Word + confidence stream
 }
-# ------------------------------------------
 
 # Shared UDP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

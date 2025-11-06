@@ -1,5 +1,5 @@
-Key,Value
-SAMPLE_RATE,16000
-MODEL_PATH,"/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/models/vosk-model-small-es-0.42"
-BLOCK_SIZE,4000
-MAX_WORDS,16
+"Key","Value"
+"SAMPLE_RATE","16000"
+"MODEL_PATH","models/vosk-model-small-pt-0.3"
+"BLOCK_SIZE","4000"
+"MAX_WORDS","16"

@@ -7,7 +7,10 @@ import sounddevice as sd
 import numpy as np
 import socket
 import json
+import threading
+import time
 from vosk import Model, KaldiRecognizer
+from yamnet_detector import YAMNetDetector
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser()
@@ -62,17 +65,31 @@ print(f"Loading Vosk model from {MODEL_PATH} ...")
 model = Model(MODEL_PATH)
 recognizer = KaldiRecognizer(model, SAMPLE_RATE)
 recognizer.SetWords(True)
-print("✅ Model loaded. Starting real-time recognition.")
+print("✅ Vosk model loaded.")
+
+# Initialize YAMNet detector
+print("Initializing YAMNet sound detector...")
+yamnet_detector = YAMNetDetector(sample_rate=SAMPLE_RATE, confidence_threshold=0.3)
+yamnet_detector.start()
+print("✅ YAMNet detector started.")
+print("Starting real-time recognition with integrated sound detection.")
 # ------------------------------------------------
 
 # ---------------- AUDIO STREAM ----------------
 def callback(indata, frames, time, status):
     if status:
         print(f"[AUDIO WARNING] {status}")
-    # Convert audio input to int16 PCM bytes
-    audio_bytes = (np.asarray(indata, dtype=np.float32).flatten() * 32767.0).clip(-32768, 32767).astype(np.int16).tobytes()
+    
+    # Get audio data as float32 array
+    audio_float = np.asarray(indata, dtype=np.float32).flatten()
+    
+    # Share audio with YAMNet detector (non-blocking)
+    yamnet_detector.process_audio(audio_float)
+    
+    # Convert audio input to int16 PCM bytes for Vosk
+    audio_bytes = (audio_float * 32767.0).clip(-32768, 32767).astype(np.int16).tobytes()
 
-    # Feed to recognizer
+    # Feed to recognizer (STT has real-time priority in main thread)
     if recognizer.AcceptWaveform(audio_bytes):
         # Finalized segment
         result = json.loads(recognizer.Result())
@@ -112,9 +129,21 @@ def callback(indata, frames, time, status):
 # ------------------------------------------------
 
 # ---------------- START STREAM ----------------
-with sd.InputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE,
-                    dtype='float32', channels=1, callback=callback):
-    print("🎤 Listening... (Press Ctrl+C to stop)")
-    import time
-    while True:
-        time.sleep(0.1)
+try:
+    with sd.InputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE,
+                        dtype='float32', channels=1, callback=callback):
+        print("🎤 Listening... (Press Ctrl+C to stop)")
+        print(f"📡 STT output: UDP ports {PORTS['partial']}, {PORTS['final']}, {PORTS['word_conf']}")
+        print(f"🔊 Sound detection output: UDP port {yamnet_detector.udp_port}")
+        while True:
+            time.sleep(0.1)
+except KeyboardInterrupt:
+    print("\n⏹️  Stopping services...")
+    yamnet_detector.stop()
+    sock.close()
+    print("✅ Services stopped gracefully")
+except Exception as e:
+    print(f"❌ Error: {e}")
+    yamnet_detector.stop()
+    sock.close()
+    raise

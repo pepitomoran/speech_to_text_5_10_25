@@ -21,18 +21,21 @@ class YAMNetDetector:
     Processes audio in a separate thread and sends detected events via UDP.
     """
     
-    def __init__(self, sample_rate=16000, confidence_threshold=0.3):
+    def __init__(self, sample_rate=16000, confidence_threshold=0.3, queue_size=100):
         """
         Initialize the YAMNet detector.
         
         Args:
             sample_rate: Audio sample rate (YAMNet expects 16kHz)
             confidence_threshold: Minimum confidence for detection reporting
+            queue_size: Maximum size of audio processing queue (default 100)
+                       Larger values use more memory but handle bursty audio better.
+                       When full, new audio is dropped to maintain real-time performance.
         """
         self.sample_rate = sample_rate
         self.confidence_threshold = confidence_threshold
         self.running = False
-        self.audio_queue = queue.Queue(maxsize=100)
+        self.audio_queue = queue.Queue(maxsize=queue_size)
         
         # UDP Settings for sound detection output
         self.udp_ip = "127.0.0.1"
@@ -51,20 +54,20 @@ class YAMNetDetector:
             raise
     
     def _load_class_names(self):
-        """Load YAMNet class names from the model."""
+        """
+        Load YAMNet class names from the model.
+        
+        Note: For this prototype, we use a simplified approach with generic class names.
+        In production, you should load the full AudioSet class map CSV file (521 classes)
+        from the model's class_map_path for accurate event labeling.
+        """
         try:
-            # YAMNet class map is embedded in the model
-            class_map_path = self.model.class_map_path().numpy().decode('utf-8')
-            # For simplicity, we'll use a subset of common classes
-            # In production, you'd load the full class map CSV
-            return [
-                "Speech", "Music", "Dog", "Cat", "Laughter", 
-                "Applause", "Clapping", "Knock", "Door", "Bell",
-                "Alarm", "Siren", "Telephone", "Glass", "Water"
-            ]
+            # YAMNet has 521 AudioSet classes
+            # Using generic naming for prototype simplicity
+            return [f"AudioEvent_{i}" for i in range(521)]
         except Exception as e:
-            print(f"[YAMNet] Warning: Could not load class names: {e}")
-            return [f"Class_{i}" for i in range(521)]  # YAMNet has 521 classes
+            print(f"[YAMNet] Warning: Could not initialize class names: {e}")
+            return [f"Class_{i}" for i in range(521)]
     
     def send_udp(self, message):
         """Send detection results via UDP."""
@@ -116,16 +119,19 @@ class YAMNetDetector:
                 for idx in top_indices:
                     confidence = float(scores.numpy().mean(axis=0)[idx])
                     if confidence >= self.confidence_threshold:
+                        # Use generic event names for this prototype
+                        # In production, load actual AudioSet class names from CSV
                         class_name = self.class_names[idx] if idx < len(self.class_names) else f"Class_{idx}"
                         
                         detection = {
                             "event": class_name,
+                            "class_id": int(idx),  # Include class ID for reference
                             "confidence": round(confidence, 3),
                             "timestamp": time.time()
                         }
                         
                         self.send_udp(json.dumps(detection))
-                        print(f"[YAMNet] Detected: {class_name} ({confidence:.3f})")
+                        print(f"[YAMNet] Detected: {class_name} (ID:{idx}, conf:{confidence:.3f})")
                 
             except queue.Empty:
                 continue
@@ -142,7 +148,8 @@ class YAMNetDetector:
             return
         
         self.running = True
-        self.thread = threading.Thread(target=self._detection_loop, daemon=True)
+        # Non-daemon thread for proper cleanup - will be joined in stop()
+        self.thread = threading.Thread(target=self._detection_loop, daemon=False)
         self.thread.start()
         print("[YAMNet] Service started")
     
@@ -152,5 +159,7 @@ class YAMNetDetector:
         self.running = False
         if hasattr(self, 'thread'):
             self.thread.join(timeout=2.0)
+            if self.thread.is_alive():
+                print("[YAMNet] Warning: Thread did not stop within timeout")
         self.sock.close()
         print("[YAMNet] Service stopped")

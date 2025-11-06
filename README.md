@@ -136,11 +136,14 @@ Press `Ctrl+C` to gracefully stop both services.
 #### Message Format
 ```json
 {
-  "event": "Music",
+  "event": "AudioEvent_42",
+  "class_id": 42,
   "confidence": 0.87,
   "timestamp": 1699281234.567
 }
 ```
+
+**Note**: This prototype uses generic event names (`AudioEvent_{id}`). For production use, you should load the full AudioSet class map to get human-readable names like "Music", "Speech", "Dog bark", etc.
 
 ## TouchDesigner Integration
 
@@ -170,7 +173,8 @@ Press `Ctrl+C` to gracefully stop both services.
                print(f"Word: {data['word']}, Confidence: {data['confidence']}")
            # Process sound event data
            elif 'event' in data:
-               print(f"Sound: {data['event']}, Confidence: {data['confidence']}")
+               class_id = data.get('class_id', -1)
+               print(f"Sound: {data['event']} (ID:{class_id}), Confidence: {data['confidence']}")
        except:
            # Handle plain text (ports 7201, 7202)
            print(f"Transcription: {msg}")
@@ -209,13 +213,17 @@ while True:
 
 ## YAMNet Sound Classes
 
-YAMNet can detect 521 audio event classes including:
+YAMNet can detect 521 audio event classes from the AudioSet ontology. This prototype uses generic class IDs (`AudioEvent_0` through `AudioEvent_520`).
+
+For production use, you can load the full AudioSet class map which includes:
 - **Speech**: Speech, Conversation, Laughter
 - **Music**: Music, Musical instrument, Singing
 - **Animals**: Dog, Cat, Bird, Roar
 - **Household**: Door, Knock, Alarm clock, Telephone
 - **Transportation**: Car, Train, Airplane
 - **Nature**: Water, Rain, Thunder, Wind
+
+To enable human-readable class names, modify `yamnet_detector.py` to load the class map CSV from TensorFlow Hub.
 
 For the full class list, see: [AudioSet Ontology](https://research.google.com/audioset/ontology/index.html)
 

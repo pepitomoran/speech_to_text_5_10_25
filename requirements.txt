@@ -13,4 +13,3 @@ vosk==0.3.44
 websockets==15.0.1
 tensorflow==2.15.0
 tensorflow-hub==0.15.0
-resampy==0.4.2

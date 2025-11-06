@@ -8,7 +8,7 @@ Runs in a separate thread for independent operation.
 import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
-import resampy
+import requests
 import socket
 import json
 import threading
@@ -45,7 +45,10 @@ class YAMNetDetector:
         # Load YAMNet model
         print("[YAMNet] Loading model from TensorFlow Hub...")
         try:
-            self.model = hub.load('https://tfhub.dev/google/yamnet/1')
+            self.model = hub.KerasLayer(
+                "https://tfhub.dev/google/yamnet/1",
+                trainable=False,
+            )
             # Load class names
             self.class_names = self._load_class_names()
             print("[YAMNet] ✅ Model loaded successfully")
@@ -55,19 +58,28 @@ class YAMNetDetector:
     
     def _load_class_names(self):
         """
-        Load YAMNet class names from the model.
+        Load YAMNet class names from the AudioSet CSV.
         
-        Note: For this prototype, we use a simplified approach with generic class names.
-        In production, you should load the full AudioSet class map CSV file (521 classes)
-        from the model's class_map_path for accurate event labeling.
+        Downloads the official class map CSV from the TensorFlow models repository.
+        Falls back to generic class names if download fails.
         """
+        CLASS_MAP_URL = (
+            "https://raw.githubusercontent.com/tensorflow/models/master/"
+            "research/audioset/yamnet/yamnet_class_map.csv"
+        )
         try:
-            # YAMNet has 521 AudioSet classes
-            # Using generic naming for prototype simplicity
-            return [f"AudioEvent_{i}" for i in range(521)]
+            print("[YAMNet] Downloading class map CSV...")
+            response = requests.get(CLASS_MAP_URL, timeout=5)
+            response.raise_for_status()
+            class_names = [
+                line.split(",")[2].strip('"')
+                for line in response.text.splitlines()[1:]
+            ]
+            print(f"[YAMNet] ✅ Loaded {len(class_names)} class names")
+            return class_names
         except Exception as e:
-            print(f"[YAMNet] Warning: Could not initialize class names: {e}")
-            return [f"Class_{i}" for i in range(521)]
+            print(f"[YAMNet] ⚠️ Failed to load class map, using generic labels: {e}")
+            return [f"class_{i}" for i in range(521)]
     
     def send_udp(self, message):
         """Send detection results via UDP."""
@@ -107,31 +119,39 @@ class YAMNetDetector:
                     audio_data = audio_data.flatten()
                 
                 # YAMNet expects float32 in range [-1.0, 1.0]
-                audio_data = audio_data.astype(np.float32)
+                # Audio comes as float32 from STT callback already normalized
+                waveform = np.asarray(audio_data, dtype=np.float32)
+                
+                if waveform.size == 0:
+                    continue
                 
                 # Run inference
-                scores, embeddings, spectrogram = self.model(audio_data)
+                scores, embeddings, spectrogram = self.model(waveform)
+                scores = scores.numpy()  # shape: (frames, 521)
                 
-                # Get top predictions
-                top_indices = np.argsort(scores.numpy().mean(axis=0))[-3:][::-1]
+                if scores.ndim != 2 or scores.shape[0] == 0:
+                    continue
                 
-                # Send detections above threshold
-                for idx in top_indices:
-                    confidence = float(scores.numpy().mean(axis=0)[idx])
-                    if confidence >= self.confidence_threshold:
-                        # Use generic event names for this prototype
-                        # In production, load actual AudioSet class names from CSV
-                        class_name = self.class_names[idx] if idx < len(self.class_names) else f"Class_{idx}"
-                        
-                        detection = {
-                            "event": class_name,
-                            "class_id": int(idx),  # Include class ID for reference
-                            "confidence": round(confidence, 3),
-                            "timestamp": time.time()
-                        }
-                        
-                        self.send_udp(json.dumps(detection))
-                        print(f"[YAMNet] Detected: {class_name} (ID:{idx}, conf:{confidence:.3f})")
+                # Get mean scores across all frames
+                mean_scores = scores.mean(axis=0)
+                
+                # Get top prediction
+                top_index = int(np.argmax(mean_scores))
+                confidence = float(mean_scores[top_index])
+                
+                # Send detection if above threshold
+                if confidence >= self.confidence_threshold:
+                    class_name = self.class_names[top_index] if top_index < len(self.class_names) else f"class_{top_index}"
+                    
+                    detection = {
+                        "event": class_name,
+                        "class_id": int(top_index),
+                        "confidence": round(confidence, 3),
+                        "timestamp": time.time()
+                    }
+                    
+                    self.send_udp(json.dumps(detection))
+                    print(f"[YAMNet] Detected: {class_name} (confidence {confidence:.2f})")
                 
             except queue.Empty:
                 continue

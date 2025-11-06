@@ -98,6 +98,8 @@ Loading Vosk model from models/vosk-model-small-pt-0.3 ...
 ✅ Vosk model loaded.
 Initializing YAMNet sound detector...
 [YAMNet] Loading model from TensorFlow Hub...
+[YAMNet] Downloading class map CSV...
+[YAMNet] ✅ Loaded 521 class names
 [YAMNet] ✅ Model loaded successfully
 [YAMNet] Service started
 ✅ YAMNet detector started.
@@ -136,14 +138,14 @@ Press `Ctrl+C` to gracefully stop both services.
 #### Message Format
 ```json
 {
-  "event": "AudioEvent_42",
-  "class_id": 42,
+  "event": "Speech",
+  "class_id": 0,
   "confidence": 0.87,
   "timestamp": 1699281234.567
 }
 ```
 
-**Note**: This prototype uses generic event names (`AudioEvent_{id}`). For production use, you should load the full AudioSet class map to get human-readable names like "Music", "Speech", "Dog bark", etc.
+**Note**: The detector automatically downloads the AudioSet class map CSV on first run to provide human-readable event names like "Speech", "Music", "Dog bark", "Laughter", etc. If the download fails, it falls back to generic labels (`class_{id}`).
 
 ## TouchDesigner Integration
 
@@ -213,17 +215,13 @@ while True:
 
 ## YAMNet Sound Classes
 
-YAMNet can detect 521 audio event classes from the AudioSet ontology. This prototype uses generic class IDs (`AudioEvent_0` through `AudioEvent_520`).
-
-For production use, you can load the full AudioSet class map which includes:
+YAMNet can detect 521 audio event classes from the AudioSet ontology. The detector automatically downloads the class map CSV to provide human-readable names including:
 - **Speech**: Speech, Conversation, Laughter
 - **Music**: Music, Musical instrument, Singing
 - **Animals**: Dog, Cat, Bird, Roar
 - **Household**: Door, Knock, Alarm clock, Telephone
 - **Transportation**: Car, Train, Airplane
 - **Nature**: Water, Rain, Thunder, Wind
-
-To enable human-readable class names, modify `yamnet_detector.py` to load the class map CSV from TensorFlow Hub.
 
 For the full class list, see: [AudioSet Ontology](https://research.google.com/audioset/ontology/index.html)
 

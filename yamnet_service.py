@@ -154,6 +154,11 @@ class YAMNetService:
                 if waveform.size == 0:
                     continue
                 
+                # Check if model is loaded
+                if self.model is None:
+                    print("[YAMNet Service] Model not loaded, cannot run inference.")
+                    continue
+
                 # Run inference
                 scores, embeddings, spectrogram = self.model(waveform)
                 scores = scores.numpy()  # shape: (frames, 521)
@@ -180,7 +185,7 @@ class YAMNetService:
                     }
                     
                     self.udp_handler.send_json(detection, udp_port)
-                    print(f"[YAMNet Service] Detected: {class_name} (confidence {confidence:.2f})")
+                    #print(f"[YAMNet Service] Detected: {class_name} (confidence {confidence:.2f})")
                 
             except queue.Empty:
                 continue

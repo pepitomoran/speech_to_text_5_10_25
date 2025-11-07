@@ -11,16 +11,12 @@ import numpy as np
 import time
 from typing import Optional
 
+import whisper  # <-- Uncommented
 
 class WhisperService:
     """
     Whisper-based speech-to-text service.
     Processes audio in a separate thread and sends results via UDP.
-    
-    Note: This is a placeholder implementation. To fully enable Whisper:
-    1. Install whisper: pip install openai-whisper
-    2. Uncomment the whisper imports and implementation
-    3. Update requirements.txt
     """
     
     def __init__(self, config_path: str, udp_handler, sample_rate: int = 16000):
@@ -78,19 +74,11 @@ class WhisperService:
     def _initialize_model(self):
         """Initialize the Whisper model."""
         try:
-            # Placeholder for Whisper model initialization
-            # Uncomment and implement when ready to use Whisper:
-            
-            # import whisper
-            # model_size = self.config.get("MODEL_SIZE", "base")
-            # print(f"[Whisper Service] Loading {model_size} model...")
-            # self.model = whisper.load_model(model_size)
-            # print("[Whisper Service] ✅ Model loaded successfully")
-            
-            print("[Whisper Service] ⚠️ Whisper is not fully implemented yet")
-            print("[Whisper Service] This is a placeholder service")
+            model_size = self.config.get("MODEL_SIZE", "base")
+            print(f"[Whisper Service] Loading {model_size} model...")
+            self.model = whisper.load_model(model_size)
+            print("[Whisper Service] ✅ Model loaded successfully")
             return True
-            
         except Exception as e:
             print(f"[Whisper Service] ❌ Error loading model: {e}")
             return False
@@ -104,80 +92,64 @@ class WhisperService:
         """
         if not self.running:
             return
-        
         try:
-            # Non-blocking put - drop audio if queue is full
             self.audio_queue.put_nowait(audio_data.copy())
         except queue.Full:
-            pass  # Skip if queue is full
+            pass
     
     def _recognition_loop(self):
-        """Main recognition loop running in a separate thread."""
         print("[Whisper Service] Recognition thread started")
-        
-        # Get UDP ports from config
         port_partial = self.config.get("UDP_PORT_PARTIAL", 7211)
         port_final = self.config.get("UDP_PORT_FINAL", 7212)
         noise_threshold = self.config.get("NOISE_THRESHOLD", 0.01)
-        language = self.config.get("LANGUAGE", "es")
-        
+        language = self.config.get("LANGUAGE", None)
+        if not language or language.lower() == "none":
+            language = None
         samples_per_buffer = int(self.buffer_duration * self.sample_rate)
         
         while self.running:
             try:
-                # Get audio from queue with timeout
                 audio_data = self.audio_queue.get(timeout=0.1)
-                
-                # Ensure audio is 1D
                 if len(audio_data.shape) > 1:
                     audio_data = audio_data.flatten()
-                
-                # Add to buffer
                 self.audio_buffer.extend(audio_data)
-                
-                # Process when buffer is full enough
                 if len(self.audio_buffer) >= samples_per_buffer:
                     buffer_array = np.array(self.audio_buffer[:samples_per_buffer], dtype=np.float32)
                     self.audio_buffer = self.audio_buffer[samples_per_buffer:]
-                    
-                    # Check if audio has sufficient energy (not silence)
                     energy = np.abs(buffer_array).mean()
                     if energy < noise_threshold:
                         continue
-                    
-                    # Placeholder for Whisper transcription
-                    # Uncomment when Whisper is fully implemented:
-                    
-                    # result = self.model.transcribe(
-                    #     buffer_array,
-                    #     language=language,
-                    #     fp16=False
-                    # )
-                    # text = result.get("text", "").strip()
-                    # if text:
-                    #     self.udp_handler.send_message(text, port_final)
-                    #     print(f"[Whisper Service] Transcribed: {text}")
-                    
-                    # Placeholder output
-                    # print(f"[Whisper Service] Processing audio chunk (energy: {energy:.4f})")
-                
+
+                    # Set language to None if empty or "None"
+                    language = self.config.get("LANGUAGE", None)
+                    if not language or str(language).lower() == "none":
+                        language = None
+
+                    # Whisper transcription
+                    if self.model is None:
+                        print("[Whisper Service] Model not loaded, cannot transcribe.")
+                        continue
+                    result = self.model.transcribe(buffer_array, language=language, fp16=False)
+                    text = result.get("text", "")
+                    if isinstance(text, str):
+                        text = text.strip()
+                    if text:
+                        self.udp_handler.send_message(text, port_final)
+                        print(f"[Whisper Service] Transcribed: {text}")
+                    else:
+                        print("[Whisper Service] No transcribed text received.")
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"[Whisper Service] Recognition error: {e}")
-        
         print("[Whisper Service] Recognition thread stopped")
     
     def start(self) -> bool:
-        """Start the Whisper service in a separate thread."""
         if self.running:
             print("[Whisper Service] Already running")
             return False
-        
-        # Initialize model
         if not self._initialize_model():
             return False
-        
         self.running = True
         self.thread = threading.Thread(target=self._recognition_loop, daemon=False)
         self.thread.start()
@@ -185,7 +157,6 @@ class WhisperService:
         return True
     
     def stop(self):
-        """Stop the Whisper service."""
         print("[Whisper Service] Stopping...")
         self.running = False
         if self.thread:

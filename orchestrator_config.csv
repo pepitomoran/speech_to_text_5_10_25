@@ -1,6 +1,6 @@
 "Key","Value"
 "SAMPLE_RATE","16000"
 "BLOCK_SIZE","4000"
-"VOSK_ENABLED","false"
+"VOSK_ENABLED","true"
 "WHISPER_ENABLED","true"
 "YAMNET_ENABLED","true"

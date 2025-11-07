@@ -1,4 +1,4 @@
-#!/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/stt_venv/bin/python3
+#!/Volumes/HENDRIX_SSD/touchdesigner/speech_to_text_5_10_25/stt_venv/bin/python
 
 """Filter subtitles that match or don't match a particular pattern."""
 

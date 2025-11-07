@@ -60,9 +60,14 @@ class YAMNetService:
                     if len(row) >= 2:
                         key, value = row[0], row[1]
                         # Convert numeric values
-                        if value.replace('.', '', 1).isdigit():
-                            config[key] = float(value) if '.' in value else int(value)
-                        else:
+                        try:
+                            if '.' in value:
+                                config[key] = float(value)
+                            elif value.isdigit():
+                                config[key] = int(value)
+                            else:
+                                config[key] = value
+                        except ValueError:
                             config[key] = value
             print(f"[YAMNet Service] Configuration loaded from {config_path}")
         except Exception as e:

@@ -57,9 +57,14 @@ class VoskService:
                     if len(row) >= 2:
                         key, value = row[0], row[1]
                         # Convert numeric values
-                        if value.isdigit():
-                            config[key] = int(value)
-                        else:
+                        try:
+                            if '.' in value:
+                                config[key] = float(value)
+                            elif value.isdigit():
+                                config[key] = int(value)
+                            else:
+                                config[key] = value
+                        except ValueError:
                             config[key] = value
             print(f"[Vosk Service] Configuration loaded from {config_path}")
         except Exception as e:

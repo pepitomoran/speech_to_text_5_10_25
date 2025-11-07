@@ -27,7 +27,7 @@ class UDPHandler:
         self.default_ip = default_ip
         self.sockets: Dict[int, socket.socket] = {}
         self.listeners: Dict[int, threading.Thread] = {}
-        self.running = False
+        self.running_ports: Dict[int, bool] = {}  # Per-port running flags
         self.callbacks: Dict[int, Callable] = {}
         
     def send_message(self, message: str, port: int, ip: Optional[str] = None) -> bool:
@@ -101,8 +101,8 @@ class UDPHandler:
             self.sockets[port] = sock
             self.callbacks[port] = callback
             
-            # Start listener thread
-            self.running = True
+            # Start listener thread with per-port running flag
+            self.running_ports[port] = True
             listener_thread = threading.Thread(
                 target=self._listen_loop,
                 args=(port,),
@@ -128,7 +128,7 @@ class UDPHandler:
         sock = self.sockets[port]
         callback = self.callbacks[port]
         
-        while self.running:
+        while self.running_ports.get(port, False):
             try:
                 data, addr = sock.recvfrom(4096)
                 message = data.decode("utf-8")
@@ -136,7 +136,7 @@ class UDPHandler:
             except socket.timeout:
                 continue
             except Exception as e:
-                if self.running:
+                if self.running_ports.get(port, False):
                     print(f"[UDP Handler] Listener error on port {port}: {e}")
     
     def stop_listener(self, port: int):
@@ -148,16 +148,16 @@ class UDPHandler:
         """
         if port in self.listeners:
             print(f"[UDP Handler] Stopping listener on port {port}")
-            self.running = False
+            self.running_ports[port] = False
             self.listeners[port].join(timeout=2.0)
             del self.listeners[port]
             if port in self.callbacks:
                 del self.callbacks[port]
+            if port in self.running_ports:
+                del self.running_ports[port]
     
     def close_all(self):
         """Close all UDP sockets and stop all listeners."""
-        self.running = False
-        
         # Stop all listeners
         for port in list(self.listeners.keys()):
             self.stop_listener(port)

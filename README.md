@@ -2,6 +2,17 @@
 
 This project integrates speech-to-text (STT) and sound detection services for use with TouchDesigner. The services run concurrently in separate threads, sharing a common audio source.
 
+> **🎉 New Modular Architecture Available!**  
+> This project now supports a modular architecture with independent services for Vosk, Whisper, and YAMNet.  
+> See [README_MODULAR.md](README_MODULAR.md) for the new modular architecture documentation.
+> 
+> **Quick Start with Modular Architecture:**
+> ```bash
+> ./service.sh  # Now uses the new modular orchestrator
+> ```
+>
+> The legacy monolithic service (`stt_service_2.py`) is still available for backward compatibility.
+
 ## Features
 
 - **Real-time Speech-to-Text**: Uses Vosk for fast, accurate speech recognition
@@ -11,6 +22,10 @@ This project integrates speech-to-text (STT) and sound detection services for us
 - **Shared Audio Source**: Single audio input feeds both services efficiently
 
 ## Architecture
+
+**Note:** The project now features a modular architecture. See [README_MODULAR.md](README_MODULAR.md) for details on the new system.
+
+### Legacy Architecture (stt_service_2.py)
 
 ```
 ┌─────────────────────┐
@@ -66,7 +81,19 @@ This project integrates speech-to-text (STT) and sound detection services for us
 
 ## Configuration
 
-Edit `config.csv` to adjust settings:
+### Modular Architecture Configuration
+
+The modular system uses separate CSV files for each service:
+- `orchestrator_config.csv` - Main orchestrator settings
+- `vosk_config.csv` - Vosk STT configuration
+- `whisper_config.csv` - Whisper STT configuration
+- `yamnet_config.csv` - YAMNet detection configuration
+
+See [README_MODULAR.md](README_MODULAR.md) for detailed configuration options.
+
+### Legacy Configuration
+
+Edit `config.csv` to adjust settings for the legacy service:
 
 ```csv
 Key,Value
@@ -82,6 +109,30 @@ MAX_WORDS,16
 - **MAX_WORDS**: Maximum words per partial transcription chunk
 
 ## Running the Services
+
+### Using the Modular Architecture (Recommended)
+
+The default launcher now uses the new modular architecture:
+
+```bash
+./service.sh
+```
+
+This starts the modular orchestrator which manages all services independently. You can:
+- Enable/disable services via configuration files
+- Control services dynamically via CLI arguments
+- Each service runs in its own thread with independent lifecycle
+
+For full documentation on the modular architecture, see [README_MODULAR.md](README_MODULAR.md).
+
+### Using the Legacy Service
+
+To run the legacy monolithic service:
+
+```bash
+source stt_venv/bin/activate
+python3 stt_service_2.py --base_dir .
+```
 
 ### Start Both Services
 
@@ -290,18 +341,53 @@ This design ensures STT performance is never impacted by YAMNet processing.
 
 ### File Structure
 
+**Modular Architecture:**
 ```
 speech_to_text_5_10_25/
-├── config.csv              # Configuration settings
-├── requirements.txt        # Python dependencies
-├── service.sh              # Launch script
-├── stt_service_2.py        # Main service (STT + YAMNet integration)
-├── yamnet_detector.py      # YAMNet sound detection module
-├── models/                 # Vosk models directory
+├── orchestrator_config.csv    # Main orchestrator configuration
+├── vosk_config.csv             # Vosk service configuration
+├── whisper_config.csv          # Whisper service configuration
+├── yamnet_config.csv           # YAMNet service configuration
+├── stt_service.py              # Main orchestrator (new)
+├── udp_handler.py              # Centralized UDP communication
+├── vosk_service.py             # Vosk STT service module
+├── whisper_service.py          # Whisper STT service module
+├── yamnet_service.py           # YAMNet detection service module
+├── README_MODULAR.md           # Modular architecture documentation
+└── ... (legacy files below)
+```
+
+**Legacy Files:**
+```
+speech_to_text_5_10_25/
+├── config.csv                  # Legacy configuration
+├── requirements.txt            # Python dependencies
+├── service.sh                  # Launch script (now uses modular by default)
+├── stt_service_2.py            # Legacy monolithic service
+├── yamnet_detector.py          # Legacy YAMNet module
+├── models/                     # Vosk models directory
 │   └── vosk-model-small-pt-0.3/
-└── td/                     # TouchDesigner project files
+└── td/                         # TouchDesigner project files
     └── stt.toe
 ```
+
+### Migration Guide
+
+**From Legacy to Modular:**
+
+1. The default `service.sh` now launches the modular orchestrator
+2. Configuration is split into separate CSV files:
+   - Copy values from `config.csv` to corresponding modular config files
+   - Enable/disable services in `orchestrator_config.csv`
+3. No code changes needed in TouchDesigner - UDP ports remain the same
+4. To revert to legacy: manually run `python3 stt_service_2.py --base_dir .`
+
+**Benefits of Modular Architecture:**
+- Independent service lifecycle management
+- Dynamic service activation/deactivation
+- Better resource management (disable unused services)
+- Support for multiple STT engines simultaneously
+- Cleaner, more maintainable codebase
 
 ### Adding New Features
 

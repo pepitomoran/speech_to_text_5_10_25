@@ -16,14 +16,20 @@ This project integrates speech-to-text (STT) and sound detection services for us
 ## Features
 
 - **Real-time Speech-to-Text**: Uses Vosk for fast, accurate speech recognition
+- **🆕 Multilingual Support**: Automatic language detection and dynamic model switching
+- **🆕 Multiple Language Models**: Preload multiple Vosk models for different languages
+- **🆕 Intelligent Switching**: Automatically routes audio to appropriate STT engine based on detected language
 - **Sound Event Detection**: YAMNet-based detection of 521 sound classes (speech, music, dog barking, etc.)
 - **Threaded Architecture**: STT runs with real-time priority; sound detection in a separate thread
 - **UDP Output**: Both services send results via UDP for easy integration with TouchDesigner
 - **Shared Audio Source**: Single audio input feeds both services efficiently
+- **Configurable Behavior**: CSV-based configuration for all parameters
 
 ## Architecture
 
-**Note:** The project now features a modular architecture. See [README_MODULAR.md](README_MODULAR.md) for details on the new system.
+**Note:** The project now features a modular architecture with multilingual support. 
+- See [README_MODULAR.md](README_MODULAR.md) for details on the modular system
+- See [MULTILINGUAL_GUIDE.md](MULTILINGUAL_GUIDE.md) for multilingual features and configuration
 
 ### Legacy Architecture (stt_service_2.py)
 
@@ -90,6 +96,25 @@ The modular system uses separate CSV files for each service:
 - `yamnet_config.csv` - YAMNet detection configuration
 
 See [README_MODULAR.md](README_MODULAR.md) for detailed configuration options.
+
+### Multilingual Configuration
+
+The system now supports automatic language detection and dynamic model switching:
+
+- `vosk_models.csv` - Define multiple Vosk language models to preload
+- Orchestrator automatically detects language using Whisper
+- Routes audio to appropriate Vosk model or Whisper based on detection
+- Configurable detection intervals and confidence thresholds
+
+**Quick Start with Multilingual:**
+```bash
+# 1. Edit vosk_models.csv to include your language models
+# 2. Enable dynamic switching in orchestrator_config.csv
+# 3. Start the system
+./service.sh
+```
+
+For complete multilingual setup and configuration, see [MULTILINGUAL_GUIDE.md](MULTILINGUAL_GUIDE.md).
 
 ### Legacy Configuration
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Whisper Service Module
-Handles Whisper STT detection in its own thread.
+Handles Whisper STT detection and language detection in its own thread.
 """
 
 import csv
@@ -9,7 +9,7 @@ import threading
 import queue
 import numpy as np
 import time
-from typing import Optional
+from typing import Optional, Tuple, Callable
 
 import whisper  # <-- Uncommented
 
@@ -17,6 +17,7 @@ class WhisperService:
     """
     Whisper-based speech-to-text service.
     Processes audio in a separate thread and sends results via UDP.
+    Provides language detection functionality for orchestrator.
     """
     
     def __init__(self, config_path: str, udp_handler, sample_rate: int = 16000):
@@ -45,6 +46,9 @@ class WhisperService:
         # Audio buffer for accumulation
         self.audio_buffer = []
         self.buffer_duration = 3.0  # Process every 3 seconds of audio
+        
+        # Language detection callback
+        self.language_detection_callback: Optional[Callable[[str, float], None]] = None
         
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from CSV file."""
@@ -83,6 +87,53 @@ class WhisperService:
             print(f"[Whisper Service] ❌ Error loading model: {e}")
             return False
     
+    def set_language_detection_callback(self, callback: Callable[[str, float], None]):
+        """
+        Set callback for language detection events.
+        
+        Args:
+            callback: Function to call with (language_code, confidence) when language is detected
+        """
+        self.language_detection_callback = callback
+    
+    def detect_language(self, audio_data: np.ndarray) -> Tuple[str, float]:
+        """
+        Detect language from audio buffer.
+        
+        Args:
+            audio_data: numpy array of audio samples (float32, -1.0 to 1.0)
+            
+        Returns:
+            Tuple of (language_code, confidence)
+        """
+        if self.model is None:
+            print("[Whisper Service] Model not loaded, cannot detect language")
+            return ("en", 0.0)
+        
+        try:
+            # Ensure audio is 1D
+            if len(audio_data.shape) > 1:
+                audio_data = audio_data.flatten()
+            
+            # Whisper expects audio padded/trimmed to 30 seconds for language detection
+            # We'll use what we have
+            audio_data = whisper.pad_or_trim(audio_data)
+            
+            # Make log-Mel spectrogram
+            mel = whisper.log_mel_spectrogram(audio_data).to(self.model.device)
+            
+            # Detect language
+            _, probs = self.model.detect_language(mel)
+            detected_language = max(probs, key=probs.get)
+            confidence = probs[detected_language]
+            
+            print(f"[Whisper Service] 🌍 Language detected: {detected_language} (confidence: {confidence:.2f})")
+            return (detected_language, confidence)
+            
+        except Exception as e:
+            print(f"[Whisper Service] Error detecting language: {e}")
+            return ("en", 0.0)
+    
     def process_audio(self, audio_data: np.ndarray):
         """
         Add audio data to the processing queue.
@@ -120,22 +171,33 @@ class WhisperService:
                     if energy < noise_threshold:
                         continue
 
-                    # Set language to None if empty or "None"
-                    language = self.config.get("LANGUAGE", None)
-                    if not language or str(language).lower() == "none":
-                        language = None
-
                     # Whisper transcription
                     if self.model is None:
                         print("[Whisper Service] Model not loaded, cannot transcribe.")
                         continue
+                    
+                    # Set language to None if empty or "None" for auto-detection
+                    language = self.config.get("LANGUAGE", None)
+                    if not language or str(language).lower() == "none":
+                        language = None
+                    
+                    # Transcribe with language detection if language not specified
                     result = self.model.transcribe(buffer_array, language=language, fp16=False)
+                    
+                    # Call language detection callback if available
+                    if self.language_detection_callback and "language" in result:
+                        detected_lang = result["language"]
+                        # Estimate confidence from transcription
+                        confidence = 0.8  # Default confidence
+                        self.language_detection_callback(detected_lang, confidence)
+                    
                     text = result.get("text", "")
                     if isinstance(text, str):
                         text = text.strip()
                     if text:
                         self.udp_handler.send_message(text, port_final)
-                        print(f"[Whisper Service] Transcribed: {text}")
+                        detected_lang = result.get("language", "unknown")
+                        print(f"[Whisper Service] Transcribed ({detected_lang}): {text}")
                     else:
                         print("[Whisper Service] No transcribed text received.")
             except queue.Empty:

@@ -7,12 +7,18 @@ This project implements a modular real-time audio system supporting multiple spe
 - **Modular Architecture**: Each detector runs as an independent service
 - **Multiple STT Engines**: 
   - Vosk for fast, accurate speech recognition
-  - Whisper for high-quality transcription (placeholder implementation)
+  - Whisper for high-quality transcription and language detection
+- **🆕 Multilingual Support**: Automatic language detection and dynamic model switching
+- **🆕 Multiple Language Models**: Preload multiple Vosk models for real-time switching
 - **Sound Event Detection**: YAMNet-based detection of 521 sound classes
 - **Flexible Configuration**: Separate CSV config files for each service
 - **Dynamic Service Management**: Start/stop services independently via config or CLI
 - **UDP Communication**: All services send results via UDP for TouchDesigner integration
 - **Thread-based Architecture**: Each service runs in its own thread with independent lifecycle
+
+> **🌍 Multilingual Features**  
+> The system now supports automatic language detection and dynamic switching between multiple preloaded Vosk models.  
+> See [MULTILINGUAL_GUIDE.md](MULTILINGUAL_GUIDE.md) for complete setup instructions and configuration options.
 
 ## Architecture
 
@@ -80,8 +86,12 @@ Key,Value
 SAMPLE_RATE,16000
 BLOCK_SIZE,4000
 VOSK_ENABLED,true
-WHISPER_ENABLED,false
+WHISPER_ENABLED,true
 YAMNET_ENABLED,true
+DYNAMIC_SWITCHING_ENABLED,true
+LANGUAGE_DETECT_BUFFER_DURATION,3.0
+LANGUAGE_CONFIDENCE_THRESHOLD,0.5
+LANGUAGE_DETECT_INTERVAL,10.0
 ```
 
 - **SAMPLE_RATE**: Audio sample rate (16000 Hz recommended)
@@ -89,6 +99,10 @@ YAMNET_ENABLED,true
 - **VOSK_ENABLED**: Enable/disable Vosk STT service
 - **WHISPER_ENABLED**: Enable/disable Whisper STT service
 - **YAMNET_ENABLED**: Enable/disable YAMNet sound detection
+- **DYNAMIC_SWITCHING_ENABLED**: Enable automatic language detection and switching
+- **LANGUAGE_DETECT_BUFFER_DURATION**: Seconds of audio to buffer for detection
+- **LANGUAGE_CONFIDENCE_THRESHOLD**: Minimum confidence to trigger language switch
+- **LANGUAGE_DETECT_INTERVAL**: Seconds between language detection checks
 
 ### Vosk Configuration (`vosk_config.csv`)
 
@@ -101,11 +115,29 @@ UDP_PORT_FINAL,7202
 UDP_PORT_WORD_CONF,7203
 ```
 
-- **MODEL_PATH**: Path to Vosk model directory
+- **MODEL_PATH**: Path to Vosk model directory (used as fallback if vosk_models.csv not found)
 - **MAX_WORDS**: Maximum words per partial transcription chunk
 - **UDP_PORT_PARTIAL**: Port for partial (in-progress) transcription
 - **UDP_PORT_FINAL**: Port for final transcription results
 - **UDP_PORT_WORD_CONF**: Port for word-level confidence data
+
+### Multiple Vosk Models Configuration (`vosk_models.csv`)
+
+For multilingual support, define multiple Vosk models:
+
+```csv
+Key,Value
+en,models/vosk-model-small-en-us-0.15
+es,models/vosk-model-small-es-0.42
+fr,models/vosk-model-small-fr-0.22
+de,models/vosk-model-small-de-0.15
+pt,models/vosk-model-small-pt-0.3
+```
+
+- **Key**: Language code (must match Whisper's language detection output)
+- **Value**: Path to Vosk model directory for that language
+
+All models are preloaded at startup. The system automatically switches between them based on detected language. See [MULTILINGUAL_GUIDE.md](MULTILINGUAL_GUIDE.md) for detailed setup.
 
 ### Whisper Configuration (`whisper_config.csv`)
 
@@ -124,10 +156,10 @@ NOISE_THRESHOLD,0.01
 - **UDP_PORT_FINAL**: Port for final transcription
 - **NOISE_THRESHOLD**: Minimum audio energy to process
 
-**Note**: Whisper is currently a placeholder implementation. To fully enable:
-1. Install: `pip install openai-whisper`
-2. Uncomment implementation in `whisper_service.py`
-3. Set `WHISPER_ENABLED=true` in `orchestrator_config.csv`
+**Note**: Whisper is now fully implemented with language detection support. It is used for:
+1. Automatic language detection (when `DYNAMIC_SWITCHING_ENABLED=true`)
+2. Transcription for languages not available in Vosk
+3. Fallback when Vosk models are not loaded
 
 ### YAMNet Configuration (`yamnet_config.csv`)
 

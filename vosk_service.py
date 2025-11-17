@@ -2,6 +2,7 @@
 """
 Vosk Service Module
 Handles Vosk STT detection in its own thread.
+Supports multiple preloaded models for different languages.
 """
 
 import os
@@ -10,7 +11,7 @@ import json
 import threading
 import queue
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict
 from vosk import Model, KaldiRecognizer
 
 
@@ -18,6 +19,7 @@ class VoskService:
     """
     Vosk-based speech-to-text service.
     Processes audio in a separate thread and sends results via UDP.
+    Supports multiple preloaded models for different languages.
     """
     
     def __init__(self, config_path: str, udp_handler, sample_rate: int = 16000, base_dir: str = "."):
@@ -39,9 +41,11 @@ class VoskService:
         # Load configuration
         self.config = self._load_config(config_path)
         
-        # Model and recognizer (lazy loaded)
-        self.model: Optional[Model] = None
-        self.recognizer: Optional[KaldiRecognizer] = None
+        # Multiple models and recognizers for different languages
+        self.models: Dict[str, Model] = {}
+        self.recognizers: Dict[str, KaldiRecognizer] = {}
+        self.current_language: str = "es"  # Default language
+        self.language_lock = threading.Lock()  # Thread-safe language switching
         
         # Thread
         self.thread: Optional[threading.Thread] = None
@@ -71,21 +75,92 @@ class VoskService:
             print(f"[Vosk Service] Error loading config: {e}")
         return config
     
+    def _load_models_config(self, models_config_path: str) -> Dict[str, str]:
+        """Load models configuration from CSV file."""
+        models_config = {}
+        try:
+            with open(models_config_path, mode='r') as file:
+                reader = csv.reader(file)
+                next(reader)  # Skip header
+                for row in reader:
+                    if len(row) >= 2:
+                        lang_code, model_path = row[0], row[1]
+                        models_config[lang_code] = model_path
+            print(f"[Vosk Service] Models configuration loaded: {list(models_config.keys())}")
+        except Exception as e:
+            print(f"[Vosk Service] Error loading models config: {e}")
+        return models_config
+    
     def _initialize_model(self):
-        """Initialize the Vosk model and recognizer."""
+        """Initialize the Vosk model and recognizer (legacy single model)."""
         try:
             model_path = self.config.get("MODEL_PATH", "models/vosk-model-small-en-us-0.15")
             full_model_path = os.path.join(self.base_dir, model_path)
             
-            print(f"[Vosk Service] Loading model from {full_model_path}...")
-            self.model = Model(full_model_path)
-            self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
-            self.recognizer.SetWords(True)
-            print("[Vosk Service] ✅ Model loaded successfully")
+            print(f"[Vosk Service] Loading single model from {full_model_path}...")
+            model = Model(full_model_path)
+            recognizer = KaldiRecognizer(model, self.sample_rate)
+            recognizer.SetWords(True)
+            
+            # Store as default language model
+            self.models[self.current_language] = model
+            self.recognizers[self.current_language] = recognizer
+            print(f"[Vosk Service] ✅ Model loaded for language: {self.current_language}")
             return True
         except Exception as e:
             print(f"[Vosk Service] ❌ Error loading model: {e}")
             return False
+    
+    def _initialize_multiple_models(self):
+        """Initialize multiple Vosk models for different languages."""
+        models_config_path = os.path.join(self.base_dir, "vosk_models.csv")
+        
+        # Check if multi-model config exists
+        if not os.path.exists(models_config_path):
+            print("[Vosk Service] No vosk_models.csv found, using single model mode")
+            return self._initialize_model()
+        
+        models_config = self._load_models_config(models_config_path)
+        
+        if not models_config:
+            print("[Vosk Service] No models configured, falling back to single model")
+            return self._initialize_model()
+        
+        # Load all configured models
+        loaded_count = 0
+        for lang_code, model_path in models_config.items():
+            try:
+                full_model_path = os.path.join(self.base_dir, model_path)
+                
+                # Check if model directory exists
+                if not os.path.exists(full_model_path):
+                    print(f"[Vosk Service] ⚠️ Model not found for {lang_code}: {full_model_path}")
+                    continue
+                
+                print(f"[Vosk Service] Loading model for {lang_code} from {full_model_path}...")
+                model = Model(full_model_path)
+                recognizer = KaldiRecognizer(model, self.sample_rate)
+                recognizer.SetWords(True)
+                
+                self.models[lang_code] = model
+                self.recognizers[lang_code] = recognizer
+                loaded_count += 1
+                print(f"[Vosk Service] ✅ Model loaded for {lang_code}")
+                
+            except Exception as e:
+                print(f"[Vosk Service] ❌ Error loading model for {lang_code}: {e}")
+        
+        if loaded_count == 0:
+            print("[Vosk Service] ❌ No models loaded successfully")
+            return False
+        
+        # Set default language to first loaded model
+        if self.current_language not in self.recognizers:
+            self.current_language = list(self.recognizers.keys())[0]
+        
+        print(f"[Vosk Service] ✅ Loaded {loaded_count} models: {list(self.models.keys())}")
+        print(f"[Vosk Service] Default language: {self.current_language}")
+        return True
     
     def process_audio(self, audio_data: np.ndarray):
         """
@@ -102,6 +177,38 @@ class VoskService:
             self.audio_queue.put_nowait(audio_data.copy())
         except queue.Full:
             pass  # Skip if queue is full (maintain real-time performance)
+    
+    def switch_language(self, language_code: str) -> bool:
+        """
+        Switch to a different language model.
+        
+        Args:
+            language_code: Language code (e.g., 'en', 'es', 'fr')
+            
+        Returns:
+            True if switched successfully, False otherwise
+        """
+        with self.language_lock:
+            if language_code not in self.recognizers:
+                print(f"[Vosk Service] Language '{language_code}' not available")
+                return False
+            
+            if language_code == self.current_language:
+                return True  # Already using this language
+            
+            old_language = self.current_language
+            self.current_language = language_code
+            print(f"[Vosk Service] 🔄 Switched language: {old_language} → {language_code}")
+            return True
+    
+    def get_current_language(self) -> str:
+        """Get the current active language code."""
+        with self.language_lock:
+            return self.current_language
+    
+    def get_available_languages(self) -> list:
+        """Get list of available language codes."""
+        return list(self.models.keys())
     
     def _recognition_loop(self):
         """Main recognition loop running in a separate thread."""
@@ -125,10 +232,17 @@ class VoskService:
                 # Convert float32 to int16 PCM bytes for Vosk
                 audio_bytes = (audio_data * 32767.0).clip(-32768, 32767).astype(np.int16).tobytes()
                 
+                # Get current recognizer (thread-safe)
+                with self.language_lock:
+                    current_recognizer = self.recognizers.get(self.current_language)
+                
+                if not current_recognizer:
+                    continue
+                
                 # Feed to recognizer
-                if self.recognizer.AcceptWaveform(audio_bytes):
+                if current_recognizer.AcceptWaveform(audio_bytes):
                     # Finalized segment
-                    result = json.loads(self.recognizer.Result())
+                    result = json.loads(current_recognizer.Result())
                     text = result.get("text", "").strip()
                     if text:
                         self.udp_handler.send_message(text, port_final)
@@ -144,7 +258,7 @@ class VoskService:
                         self.udp_handler.send_json(word_conf, port_word_conf)
                 else:
                     # Partial transcription (in progress)
-                    partial = json.loads(self.recognizer.PartialResult())
+                    partial = json.loads(current_recognizer.PartialResult())
                     ptext = partial.get("partial", "")
                     if ptext:
                         # Split into chunks based on max words
@@ -174,8 +288,8 @@ class VoskService:
             print("[Vosk Service] Already running")
             return False
         
-        # Initialize model
-        if not self._initialize_model():
+        # Initialize models (supports both single and multiple models)
+        if not self._initialize_multiple_models():
             return False
         
         self.running = True
